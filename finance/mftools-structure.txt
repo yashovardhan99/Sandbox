@@ -1,0 +1,48 @@
+mftools/
+│
+├── mftools/
+│   ├── __init__.py
+│   ├── main.py                # Entry point (CLI or main script)
+│
+│   ├── funds/                 # All fund-related logic
+│   │   ├── __init__.py
+│   │   ├── prices.py          # Fetch/get mutual fund prices (NAVs)
+│   │   ├── details.py         # Fund details, metadata, scheme info
+│   │   └── performance.py     # Fund performance calculations
+│
+│   ├── portfolio/             # Portfolio management logic
+│   │   ├── __init__.py
+│   │   ├── core.py            # Portfolio creation, update, import
+│   │   ├── transactions.py    # Transaction storage and handling
+│   │   └── performance.py     # Portfolio performance calculations
+│
+│   ├── io/                    # Input/output utilities
+│   │   ├── __init__.py
+│   │   ├── file.py            # Read/write dataframes, files
+│   │   ├── download.py        # Download data from public sources
+│   │   └── paths.py           # Manage storage locations and paths
+│
+│   ├── models/                # Data models and schemas
+│   │   ├── __init__.py
+│   │   ├── fund.py            # Fund model/schema
+│   │   ├── portfolio.py       # Portfolio model/schema
+│   │   └── transaction.py     # Transaction model/schema
+│
+│   └── utils.py               # General-purpose utilities
+│
+├── tests/                     # Unit tests for all modules
+│   ├── __init__.py
+│   ├── test_funds.py
+│   ├── test_portfolio.py
+│   ├── test_io.py
+│   └── ...
+│
+├── data/                      # Example/static data for testing/dev
+│   ├── example_transactions.parquet
+│   └── example_portfolio.json
+│
+├── docs/                      # Documentation
+│
+├── README.md
+├── CONTRIBUTING.md
+└── LICENSE
