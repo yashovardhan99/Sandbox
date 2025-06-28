@@ -1,96 +1,6 @@
 import polars as pl
 from scipy import optimize
 
-df = pl.DataFrame(
-    {
-        "scheme_code": [
-            "ABC",
-            "ABC",
-            "ABC",
-            "ABC",
-            "ABC",
-            "ABC",
-            "ABC",
-            "ABC",
-            "ABC",
-            "ABC",
-            "ABC",
-            "ABC",
-            "ABC",
-            "DEF",
-            "DEF",
-            "DEF",
-            "DEF",
-            "DEF",
-            "DEF",
-            "DEF",
-            "DEF",
-            "DEF",
-            "DEF",
-            "DEF",
-            "DEF",
-            "DEF",
-        ],
-        "date": [
-            "2023-01-01",
-            "2023-02-02",
-            "2023-03-01",
-            "2023-04-01",
-            "2023-05-01",
-            "2023-06-01",
-            "2023-07-01",
-            "2023-08-01",
-            "2023-09-01",
-            "2023-10-01",
-            "2023-11-01",
-            "2023-12-01",
-            "2023-12-01",
-            "2024-12-01",
-            "2023-01-01",
-            "2023-02-02",
-            "2023-03-01",
-            "2023-04-01",
-            "2023-05-01",
-            "2023-06-01",
-            "2023-07-01",
-            "2023-08-01",
-            "2023-09-01",
-            "2023-10-01",
-            "2023-11-01",
-            "2023-12-01",
-        ],
-        "amount": [
-            1000,
-            1500,
-            1200,
-            1300,
-            1400,
-            1600,
-            1100,
-            1700,
-            1300,
-            1800,
-            1900,
-            2000,
-            -19000,
-            -20000,
-            1000,
-            1500,
-            1200,
-            1300,
-            1400,
-            1600,
-            1100,
-            1700,
-            1300,
-            1800,
-            1900,
-            2000,
-        ],
-    }
-)
-df = df.with_columns(pl.col("date").cast(pl.Date()))
-
 
 def xnpv(rate: float, df: pl.DataFrame) -> float:
     """
@@ -170,11 +80,109 @@ def xirr(df: pl.Series | pl.DataFrame, guess=0.1) -> float:
         df = df.select(pl.col("date"), pl.col("amount"))
     else:
         raise ValueError("Input must be a Polars Series or DataFrame.")
+    df = df.with_columns(
+        pl.col("date").cast(pl.Date()),
+        pl.col("amount").cast(pl.Float64),
+    )
     return optimize.newton(lambda r: xnpv(r, df), guess)
 
-print(xirr(df))
 
-df = df.group_by("scheme_code").agg(
-    pl.struct(["date", "amount"]).map_batches(xirr, returns_scalar=True).alias("xirr"),
-)
-print(df)
+if __name__ == "__main__":
+    df = pl.DataFrame(
+        {
+            "scheme_code": [
+                "ABC",
+                "ABC",
+                "ABC",
+                "ABC",
+                "ABC",
+                "ABC",
+                "ABC",
+                "ABC",
+                "ABC",
+                "ABC",
+                "ABC",
+                "ABC",
+                "ABC",
+                "DEF",
+                "DEF",
+                "DEF",
+                "DEF",
+                "DEF",
+                "DEF",
+                "DEF",
+                "DEF",
+                "DEF",
+                "DEF",
+                "DEF",
+                "DEF",
+                "DEF",
+            ],
+            "date": [
+                "2023-01-01",
+                "2023-02-02",
+                "2023-03-01",
+                "2023-04-01",
+                "2023-05-01",
+                "2023-06-01",
+                "2023-07-01",
+                "2023-08-01",
+                "2023-09-01",
+                "2023-10-01",
+                "2023-11-01",
+                "2023-12-01",
+                "2023-12-01",
+                "2024-12-01",
+                "2023-01-01",
+                "2023-02-02",
+                "2023-03-01",
+                "2023-04-01",
+                "2023-05-01",
+                "2023-06-01",
+                "2023-07-01",
+                "2023-08-01",
+                "2023-09-01",
+                "2023-10-01",
+                "2023-11-01",
+                "2023-12-01",
+            ],
+            "amount": [
+                1000,
+                1500,
+                1200,
+                1300,
+                1400,
+                1600,
+                1100,
+                1700,
+                1300,
+                1800,
+                1900,
+                2000,
+                -19000,
+                -20000,
+                1000,
+                1500,
+                1200,
+                1300,
+                1400,
+                1600,
+                1100,
+                1700,
+                1300,
+                1800,
+                1900,
+                2000,
+            ],
+        }
+    )
+    df = df.with_columns(pl.col("date").cast(pl.Date()))
+
+    print(xirr(df))
+
+    df = df.group_by("scheme_code").agg(
+        pl.struct(["date", "amount"])
+        .map_batches(xirr, returns_scalar=True)
+        .alias("xirr"),
+    )
+    print(df)
