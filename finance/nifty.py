@@ -1,6 +1,5 @@
 # Compare the results of a regular SIP between Nifty 50 and Nifty 50 Equal Weight
 
-from ast import In
 import polars as pl
 from datetime import date
 from xirr import xirr
@@ -157,12 +156,12 @@ if __name__ == "__main__":
             pl.col("Index Name"),
             pl.col("Start Date"),
             pl.col("End Date"),
-            pl.col("CAGR"),
-            pl.col("xirr").alias("XIRR"),
-            pl.col("gains").alias("Gains"),
             pl.col("Total Investment"),
             pl.col("Total Units"),
             pl.col("Final Value"),
+            pl.col("gains").alias("Absolute Gains"),
+            pl.col("CAGR"),
+            pl.col("xirr").alias("XIRR"),
         )
         .sort("XIRR", descending=True)
     )
@@ -173,5 +172,8 @@ if __name__ == "__main__":
         thousands_separator=True,
         float_precision=4,
         tbl_cols=-1,  # Show all columns
+        tbl_rows=100,  # Show up to 100 rows
+        tbl_hide_column_data_types=True,  # Hide data types in the output
+        tbl_hide_dataframe_shape=True,  # Hide the shape of the DataFrame
     ):
         print(df_sip_total)
