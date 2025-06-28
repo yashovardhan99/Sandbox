@@ -2,6 +2,7 @@
 
 import polars as pl
 from datetime import date
+
 from xirr import xirr
 import sys
 import pathlib
@@ -60,40 +61,92 @@ def build_sip(
     return df_sip
 
 
+def get_rolling_returns(
+    df: pl.DataFrame,
+    start_date: date,
+    end_date: date,
+    period: str = "1y",
+    group_by: str = "Index Name",
+) -> pl.DataFrame:
+    """
+    Calculate rolling returns for a given period and group by specified column.
+    """
+
+    pl.duration()
+    return (
+        df.set_sorted("Date")
+        .group_by_dynamic(
+            "Date",
+            every="1d",
+            period=period,
+            group_by=group_by,
+            include_boundaries=True,
+            label="datapoint",
+        )
+        .agg(
+            (
+                (pl.col("Close").last() / pl.col("Close").first()).pow(
+                    (
+                        1
+                        / (
+                            (pl.col("Date").last() - pl.col("Date").first())
+                            / pl.duration(hours=8766)  # 1 year in hours
+                        )
+                    )
+                )
+                - 1
+            ).alias("Return"),
+        )
+        .filter(pl.col("_upper_boundary") <= end_date)
+        .filter(pl.col("Date") == pl.col("_lower_boundary"))
+        .group_by("Index Name")
+        .agg(
+            pl.col("Return").min().alias(f"{period} Min Return"),
+            pl.col("Return").quantile(0.25).alias(f"{period} 25% Quantile"),
+            pl.col("Return").median().alias(f"{period} Median Return"),
+            pl.col("Return").quantile(0.75).alias(f"{period} 75% Quantile"),
+            pl.col("Return").max().alias(f"{period} Max Return"),
+        )
+        .sort("Index Name")
+    )
+
+
 if __name__ == "__main__":
     inv_amount = 10_000 if len(sys.argv) < 2 else float(sys.argv[1])
     step_up = 0.10 if len(sys.argv) < 3 else float(sys.argv[2])
 
-    start_date = None
-    end_date = None
+    start_date: date | None = None
+    end_date: date | None = None
 
-    data: list[pl.DataFrame] = []
+    sip_data: list[pl.DataFrame] = []
+    raw_data: list[pl.DataFrame] = []
 
     for path in pathlib.Path().glob(PATH):
         print(f"Processing {path}")
 
-        sip_data = pl.read_csv(path, null_values="-").with_columns(
+        df = pl.read_csv(path, null_values="-").with_columns(
             Date=pl.col("Date").str.to_date("%d %b %Y")
         )
 
+        raw_data.append(df)
+
         start_date = (
-            sip_data.select(pl.col("Date").min()).item()
-            if start_date is None
-            else start_date
+            df.select(pl.col("Date").min()).item() if start_date is None else start_date
         )
         end_date = (
-            sip_data.select(pl.col("Date").max()).item()
-            if end_date is None
-            else end_date
+            df.select(pl.col("Date").max()).item() if end_date is None else end_date
         )
 
-        data.append(
-            build_sip(sip_data, inv_amount, step_up, start_date, end_date).with_columns(
+        sip_data.append(
+            build_sip(df, inv_amount, step_up, start_date, end_date).with_columns(
                 pl.col("Index Name"),
             )
         )
 
-    df_sip = pl.concat(data).sort("Date")
+    if start_date is None or end_date is None:
+        raise ValueError("No data found in the specified path.")
+
+    df_sip = pl.concat(sip_data).sort("Date")
     df_sip_total = (
         df_sip.group_by("Index Name")
         .agg(
@@ -166,6 +219,20 @@ if __name__ == "__main__":
         .sort("XIRR", descending=True)
     )
 
+    df_rollings = pl.concat(raw_data).sort("Date")
+
+    df_rolling_1y = get_rolling_returns(
+        df_rollings, start_date, end_date, period="1y", group_by="Index Name"
+    )
+
+    df_rolling_2y = get_rolling_returns(
+        df_rollings, start_date, end_date, period="2y", group_by="Index Name"
+    )
+
+    df_rolling_5y = get_rolling_returns(
+        df_rollings, start_date, end_date, period="5y", group_by="Index Name"
+    )
+
     print("SIP Summary:")
     with pl.Config(
         tbl_cell_numeric_alignment="RIGHT",
@@ -177,3 +244,12 @@ if __name__ == "__main__":
         tbl_hide_dataframe_shape=True,  # Hide the shape of the DataFrame
     ):
         print(df_sip_total)
+
+        print("\n1 Year Rolling Returns:")
+        print(df_rolling_1y)
+
+        print("\n2 Year Rolling Returns:")
+        print(df_rolling_2y)
+
+        print("\n5 Year Rolling Returns:")
+        print(df_rolling_5y)
