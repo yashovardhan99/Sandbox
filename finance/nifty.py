@@ -147,33 +147,49 @@ if __name__ == "__main__":
         raise ValueError("No data found in the specified path.")
 
     df_sip = pl.concat(sip_data).sort("Date")
+    df_raw = pl.concat(raw_data).sort("Date")
+
+    df_latest = df_raw.group_by("Index Name").agg(
+        pl.col("Close").last().alias("Latest Close"),
+        pl.col("Date").last().alias("End Date"),
+    )
+
     df_sip_total = (
         df_sip.group_by("Index Name")
         .agg(
             pl.col("Investment Amount").sum().alias("Total Investment"),
             pl.col("units").sum().alias("Total Units"),
+            pl.col("Date").first().alias("Start Date"),
+            pl.col("NAV").first().alias("Start NAV"),
+        )
+        .join(
+            df_latest,
+            on="Index Name",
+        )
+        .with_columns(
+            (pl.col("Latest Close") * pl.col("Total Units"))
+            .cast(pl.Decimal(None, 4))
+            .alias("Final Value"),
             (
-                (pl.col("NAV").last() / pl.col("NAV").first())
+                (pl.col("Latest Close") * pl.col("Total Units")).cast(
+                    pl.Decimal(None, 4)
+                )
+                - pl.col("Total Investment")
+            ).alias("Absolute Gains"),
+            (
+                (pl.col("Latest Close") / pl.col("Start NAV"))
                 .cast(pl.Float64())
                 .pow(
                     1
                     / (
-                        (pl.col("Date").last() - pl.col("Date").first())
+                        (pl.col("End Date") - pl.col("Start Date"))
                         / pl.duration(days=365)
                     )
                 )
                 - 1
             ).alias("CAGR"),
-            pl.col("Date").first().alias("Start Date"),
-            pl.col("Date").last().alias("End Date"),
-            (pl.col("NAV").last() * pl.col("units").sum())
-            .cast(pl.Decimal(None, 4))
-            .alias("Final Value"),
         )
-        .with_columns(gains=pl.col("Final Value") - pl.col("Total Investment"))
     )
-
-    # print(df_sip_total)
 
     df_returns = (
         pl.concat(
@@ -201,8 +217,6 @@ if __name__ == "__main__":
         )
     )
 
-    # print(df_returns)
-
     df_sip_total = (
         df_sip_total.join(df_returns, on="Index Name", how="left")
         .select(
@@ -212,14 +226,14 @@ if __name__ == "__main__":
             pl.col("Total Investment"),
             pl.col("Total Units"),
             pl.col("Final Value"),
-            pl.col("gains").alias("Absolute Gains"),
+            pl.col("Absolute Gains"),
             pl.col("CAGR"),
             pl.col("xirr").alias("XIRR"),
         )
         .sort("XIRR", descending=True)
     )
 
-    df_rollings = pl.concat(raw_data).sort("Date")
+    df_rollings = df_raw
 
     df_rolling_1y = get_rolling_returns(
         df_rollings, start_date, end_date, period="1y", group_by="Index Name"
@@ -233,7 +247,6 @@ if __name__ == "__main__":
         df_rollings, start_date, end_date, period="5y", group_by="Index Name"
     )
 
-    print("SIP Summary:")
     with pl.Config(
         tbl_cell_numeric_alignment="RIGHT",
         thousands_separator=True,
@@ -243,6 +256,7 @@ if __name__ == "__main__":
         tbl_hide_column_data_types=True,  # Hide data types in the output
         tbl_hide_dataframe_shape=True,  # Hide the shape of the DataFrame
     ):
+        print("SIP Summary:")
         print(df_sip_total)
 
         print("\n1 Year Rolling Returns:")
