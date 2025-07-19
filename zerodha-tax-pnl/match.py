@@ -286,20 +286,85 @@ df_alloc = add_sell_charges_to_allocations(df_alloc, df_sells).sort(
     ["Sell Exit Date", "Buy Order Date", "Symbol"]
 )
 
-with pl.Config(tbl_cols=20, tbl_rows=20):
-    print(
-        df_alloc.group_by("Symbol", "Sell Entry Date", "Sell Exit Date")
-        .agg(
-            pl.sum("Buy Charge").alias("Total Buy Charge"),
-            pl.sum("Sell Charge").alias("Total Sell Charge"),
-            pl.sum("Allocated Quantity").alias("Total Allocated Quantity"),
-            (pl.col("Buy Price") * pl.col("Allocated Quantity"))
-            .sum()
-            .alias("Total Buy Value"),
-            (pl.col("Sell Price") * pl.col("Allocated Quantity"))
-            .sum()
-            .alias("Total Sell Value"),
-            (pl.sum("Buy Charge") + pl.sum("Sell Charge")).alias("Total Charges"),
-        )
-        .sort("Sell Exit Date", "Sell Entry Date", "Symbol")
+EXTRA_CG_CHARGE = Decimal("15.34")
+
+df = (
+    df_alloc.group_by("Symbol", "Sell Entry Date", "Sell Exit Date")
+    .agg(
+        pl.sum("Buy Charge").alias("Total Buy Charge"),
+        pl.sum("Sell Charge").alias("Total Sell Charge"),
+        pl.sum("Allocated Quantity").alias("Total Allocated Quantity"),
+        (pl.col("Buy Price") * pl.col("Allocated Quantity"))
+        .sum()
+        .alias("Total Buy Value"),
+        (pl.col("Sell Price") * pl.col("Allocated Quantity"))
+        .sum()
+        .alias("Total Sell Value"),
+        (pl.sum("Buy Charge") + pl.sum("Sell Charge")).alias("Total Charges"),
     )
+    .sort("Sell Exit Date", "Sell Entry Date", "Symbol")
+)
+
+# Add extra CG charge once per (Symbol, Sell Exit Date)
+df = df.with_columns(pl.lit(0).alias("Extra CG Charge"))
+
+mask_cg = df["Sell Exit Date"] != df["Sell Entry Date"]
+df_cg_only = df.filter(mask_cg)
+
+# Find first row for each (Symbol, Sell Exit Date) among CG trades
+first_cg_idx = (
+    df_cg_only.group_by(["Symbol", "Sell Exit Date"])
+    .agg(pl.first("Sell Entry Date").alias("First Entry Date"))
+    .to_dicts()
+)
+first_cg_set = set(
+    (row["Symbol"], row["Sell Exit Date"], row["First Entry Date"])
+    for row in first_cg_idx
+)
+
+
+def add_extra_charge(row):
+    if (
+        row["Sell Exit Date"] != row["Sell Entry Date"]
+        and (row["Symbol"], row["Sell Exit Date"], row["Sell Entry Date"])
+        in first_cg_set
+    ):
+        return EXTRA_CG_CHARGE
+    return Decimal(0)
+
+
+df = df.with_columns(
+    pl.Series([add_extra_charge(row) for row in df.to_dicts()]).alias("Extra CG Charge")
+)
+df = df.with_columns(
+    (pl.col("Total Sell Charge") + pl.col("Extra CG Charge")).alias(
+        "Total Sell Charge"
+    ),
+    (pl.col("Total Charges") + pl.col("Extra CG Charge")).alias("Total Charges"),
+)
+
+with pl.Config(tbl_cols=20, tbl_rows=20):
+    print(df)
+
+
+df_intraday = df.filter(pl.col("Sell Exit Date") == pl.col("Sell Entry Date")).select(
+    "Symbol",
+    "Sell Entry Date",
+    "Sell Exit Date",
+    "Total Buy Value",
+    "Total Sell Value",
+    "Total Charges",
+)
+df_cg = df.filter(pl.col("Sell Exit Date") != pl.col("Sell Entry Date")).select(
+    "Symbol",
+    "Sell Entry Date",
+    "Sell Exit Date",
+    "Total Buy Value",
+    "Total Sell Value",
+    "Total Charges",
+)
+
+df_intraday.write_csv("intraday_output.csv")
+df_cg.write_csv("cg_output.csv")
+print("Intraday output written to intraday_output.csv")
+print("CG output written to cg_output.csv")
